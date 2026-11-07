@@ -1,8 +1,12 @@
-library(dplyr)
-library(tidyr)
-library(ggplot2)
+packages <- c('caret', 'rpart', 'corrplot', 'rpart.plot', 'car',
+              'VGAM', 'dplyr', 'caTools', 'class', 'ggplot2',
+              'kernlab', 'glmnet', 'tidyr')
+
+invisible(lapply(packages, library, character.only = TRUE))
+
 dir.create("output", showWarnings = FALSE)
 
+### setwd('C:/Users/vomba/Desktop/Studijos/Data Mining/Group Project/Nutrient Project/Git')
 
 # 1. Read the five files into one table ---------------------------------
 file_names <- paste0("FOOD-DATA-GROUP", 1:5, ".csv")
@@ -120,3 +124,153 @@ ggsave("output/fig3_correlations.png", width = 10, height = 6, dpi = 300)
 # 7. Save the cleaned dataset - for modelling  --------------
 write.csv(food100, "output/food_per100g_clean.csv", row.names = FALSE)
 cat("Done:", nrow(food100), "foods saved\n")   # 2198
+
+
+
+##########
+
+df <- step3
+
+### Target
+
+targets <- minerals
+
+### Test/Train splits 70:30
+
+set.seed(321)
+
+tr_df_filtered <- sample(1:nrow(df), size = 0.7 * nrow(df))
+train_df_filtered <- df[tr_df_filtered, ]
+test_df_filtered <- df[-tr_df_filtered, ]
+
+names(train_df_filtered) <- make.names(names(train_df_filtered))
+names(test_df_filtered) <- make.names(names(test_df_filtered))  
+
+macros <- make.names(macros)
+
+### kfolds value
+
+k_folds <- 8
+
+
+### Linear Model
+
+lm_models <- list()
+performance <- list()
+
+for (target in targets){
+  
+  tr <- train_df_filtered
+  te <- test_df_filtered
+  tr[[target]] <- log1p(tr[[target]])
+  te[[target]] <- log1p(te[[target]])
+  
+  predictors <- setdiff(macros, target)
+  
+  set.seed(321)
+  fold <- createFolds(tr[[target]], k = k_folds, returnTrain = TRUE)
+  ctr1 <- trainControl(method = 'cv', index = fold)
+  
+  lmCTRL <- train(reformulate(predictors, response = target), data = tr,method = 'lm',
+    preProcess = c('zv', 'YeoJohnson'), trControl = ctr1)
+  
+  lm_models[[target]] <- lmCTRL
+  
+  ### Error metrics
+  tr_perf <- getTrainPerf(lmCTRL)[, c('TrainRMSE', 'TrainRsquared', 'TrainMAE')]
+  
+  ### Log scale
+  te_perf <- defaultSummary(data.frame(obs  = te[[target]],pred = predict(lmCTRL, te)))
+  names(te_perf) <- paste0('Test', names(te_perf))
+  
+  ### Back to original scale
+  te_orig <- defaultSummary(data.frame(obs  = expm1(te[[target]]), pred = expm1(predict(lmCTRL, te))))
+  names(te_orig) <- paste0('TestOrig', names(te_orig))
+  performance[[target]] <- cbind(tr_perf, t(te_perf), t(te_orig))
+  }
+
+performance_table <- do.call(rbind, performance)
+round(performance_table,3)
+
+### Lasso
+
+lasso_models <- list()
+performance_lasso <- list()
+
+for (target in targets){
+  
+  tr <- train_df_filtered
+  te <- test_df_filtered
+  tr[[target]] <- log1p(tr[[target]])
+  te[[target]] <- log1p(te[[target]])
+  
+  predictors <- setdiff(macros, target)
+  
+  set.seed(321)
+  fold <- createFolds(tr[[target]], k = k_folds, returnTrain = TRUE)
+  ctr1 <- trainControl(method = 'cv', index = fold)
+  
+  lassoGrid = expand.grid(alpha = 1, lambda = 10^seq(-3, 1, length = 30)) ### Check params later
+  
+  LglmnetCTRL <- train(reformulate(predictors, response = target), data = tr,
+                       method = 'glmnet', preProcess = c('YeoJohnson','zv'),
+                       trControl = ctr1, tuneGrid = lassoGrid)
+  
+  lasso_models[[target]] <- LglmnetCTRL
+  
+  ### Error metrics
+  tr_perf <- getTrainPerf(LglmnetCTRL)[, c('TrainRMSE', 'TrainRsquared', 'TrainMAE')]
+  
+  ### Log scale
+  te_perf <- defaultSummary(data.frame(obs  = te[[target]],pred = predict(LglmnetCTRL, te)))
+  names(te_perf) <- paste0('Test', names(te_perf))
+  
+  ### Back to original scale
+  te_orig <- defaultSummary(data.frame(obs  = expm1(te[[target]]), pred = expm1(predict(LglmnetCTRL, te))))
+  names(te_orig) <- paste0('TestOrig', names(te_orig))
+  
+  performance_lasso[[target]] <- cbind(tr_perf, t(te_perf), t(te_orig))
+  }
+
+performance_table_lasso <- do.call(rbind, performance_lasso)
+round(performance_table_lasso,3)
+
+### Elastic Net
+
+Enet_models <- list()
+performance_enet <- list()
+
+for (target in targets){
+  
+  tr <- train_df_filtered
+  te <- test_df_filtered
+  tr[[target]] <- log1p(tr[[target]])
+  te[[target]] <- log1p(te[[target]])
+  
+  predictors <- setdiff(macros, target)
+  
+  set.seed(321)
+  fold <- createFolds(tr[[target]], k = k_folds, returnTrain = TRUE)
+  ctr1 <- trainControl(method = 'cv', index = fold)
+  
+  ENglmnetCTRL <- train(reformulate(predictors, response = target), data = tr, ### Add parameter grids
+                        method = 'glmnet', preProcess = c('YeoJohnson','zv'),
+                        trControl = ctr1)
+  Enet_models[[target]] <- ENglmnetCTRL
+  
+  ### Error metrics
+  tr_perf <- getTrainPerf(ENglmnetCTRL)[, c('TrainRMSE', 'TrainRsquared', 'TrainMAE')]
+  
+  ### Log scale
+  te_perf <- defaultSummary(data.frame(obs  = te[[target]],pred = predict(ENglmnetCTRL, te)))
+  names(te_perf) <- paste0('Test', names(te_perf))
+  
+  ### Back to original scale
+  te_orig <- defaultSummary(data.frame(obs  = expm1(te[[target]]), pred = expm1(predict(ENglmnetCTRL, te))))
+  names(te_orig) <- paste0('TestOrig', names(te_orig))
+  
+  performance_enet[[target]] <- cbind(tr_perf, t(te_perf), t(te_orig))
+}
+
+performance_table_enet <- do.call(rbind, performance_enet)
+round(performance_table_enet,3)
