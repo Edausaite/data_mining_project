@@ -239,7 +239,7 @@ round(performance_table_lasso,3)
 
 ### Ridge
 
-ridgeGrid <- data.frame(lambda = seq(0, 0.1, length = 10))
+ridgeGrid <- data.frame(lambda = seq(0, 1, length = 21))
 
 ridge_models <- list()
 performance_ridge <- list()
@@ -286,6 +286,8 @@ round(performance_table_ridge, 3)
 
 Enet_models <- list()
 performance_enet <- list()
+enetGrid <- expand.grid(alpha = seq(0.1, 0.9, by = 0.1),
+                        lambda = 10^seq(-3, 1, length = 30))
 
 for (target in targets){
   
@@ -300,9 +302,9 @@ for (target in targets){
   fold <- createFolds(tr[[target]], k = k_folds, returnTrain = TRUE)
   ctr1 <- trainControl(method = 'cv', index = fold)
   
-  ENglmnetCTRL <- train(reformulate(predictors, response = target), data = tr, ### Add parameter grids
+  ENglmnetCTRL <- train(reformulate(predictors, response = target), data = tr,
                         method = 'glmnet', preProcess = c('YeoJohnson','zv'),
-                        trControl = ctr1)
+                        trControl = ctr1, tuneGrid = enetGrid)
   Enet_models[[target]] <- ENglmnetCTRL
   
   ### Error metrics
