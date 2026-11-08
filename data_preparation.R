@@ -66,18 +66,21 @@ step2 <- step1[apply(step1[macros], 1, max) <= 100, ]
 # Remove impossible foods: more sugar than carbohydrates (+0.1 for rounding)
 step3 <- filter(step2, Sugars <= Carbohydrates + 0.1)
 
-food100 <- step3
+# Remove foods with mineral values shifted by one column
+# (calcium -> copper, magnesium -> manganese, phosphorus -> potassium, potassium -> selenium)
+step4 <- filter(step3, !(Copper > 5 & Calcium < 1))
+
+food100 <- step4
 
 cleaning <- data.frame(
   step = c("Original dataset", "Reference weight below 5 g",
-           "Nutrient above 100 g per 100 g", "Sugars exceed total carbohydrates"),
+           "Nutrient above 100 g per 100 g", "Sugars exceed total carbohydrates","Mineral values shifted by one column"),
   removed = c(NA, nrow(food) - nrow(step1), nrow(step1) - nrow(step2),
-              nrow(step2) - nrow(step3)),
-  remaining = c(nrow(food), nrow(step1), nrow(step2), nrow(step3))
+              nrow(step2) - nrow(step3), nrow(step3) - nrow(step4)),
+  remaining = c(nrow(food), nrow(step1), nrow(step2), nrow(step3), nrow(step4))
 )
 print(cleaning)
 write.csv(cleaning, "output/table1_cleaning_steps.csv", row.names = FALSE)
-
 
 # 4. Share of zeros (targets need < 25% zeros) ---------------------------
 vitamins <- grep("^Vitamin", names(food100), value = TRUE)
@@ -126,11 +129,9 @@ ggsave("output/fig3_correlations.png", width = 10, height = 6, dpi = 300)
 write.csv(food100, "output/food_per100g_clean.csv", row.names = FALSE)
 cat("Done:", nrow(food100), "foods saved\n")   # 2198
 
-
-
 ##########
 
-df <- step3
+df <- step4
 
 ### Target
 
@@ -154,7 +155,7 @@ macros <- make.names(macros)
 k_folds <- 8
 
 
-### Linear Model
+### Linear model
 
 lm_models <- list()
 performance <- list()
@@ -236,10 +237,12 @@ for (target in targets){
 performance_table_lasso <- do.call(rbind, performance_lasso)
 round(performance_table_lasso,3)
 
-### Elastic Net
+### Ridge
 
-Enet_models <- list()
-performance_enet <- list()
+ridgeGrid <- data.frame(lambda = seq(0, 1, length = 21))
+
+ridge_models <- list()
+performance_ridge <- list()
 
 for (target in targets){
   
@@ -254,9 +257,54 @@ for (target in targets){
   fold <- createFolds(tr[[target]], k = k_folds, returnTrain = TRUE)
   ctr1 <- trainControl(method = 'cv', index = fold)
   
-  ENglmnetCTRL <- train(reformulate(predictors, response = target), data = tr, ### Add parameter grids
+  RidgeCTRL <- train(reformulate(predictors, response = target), data = tr,
+                       method = 'ridge', preProcess = c('YeoJohnson','zv'),
+                       trControl = ctr1, tuneGrid = ridgeGrid)
+  
+  ridge_models[[target]] <- RidgeCTRL
+  
+  ### Error metrics
+  tr_perf <- getTrainPerf(RidgeCTRL)[, c('TrainRMSE', 'TrainRsquared', 'TrainMAE')]
+  
+  ### Log scale
+  pred_log <- predict(RidgeCTRL, te)
+  te_perf <- defaultSummary(data.frame(obs = te[[target]], pred = pred_log))
+  names(te_perf) <- paste0('Test', names(te_perf))
+  
+  ### Back to original scale
+  te_orig <- defaultSummary(data.frame(obs = expm1(te[[target]]), pred = expm1(pred_log)))
+  names(te_orig) <- paste0('TestOrig', names(te_orig))
+  
+  performance_ridge[[target]] <- cbind(tr_perf, t(te_perf), t(te_orig),
+                                       lambda = RidgeCTRL$bestTune$lambda)
+  }
+
+performance_table_ridge <- do.call(rbind, performance_ridge)
+round(performance_table_ridge, 3)
+
+### Elastic Net
+
+Enet_models <- list()
+performance_enet <- list()
+enetGrid <- expand.grid(alpha = seq(0.1, 0.9, by = 0.1),
+                        lambda = 10^seq(-3, 1, length = 30))
+
+for (target in targets){
+  
+  tr <- train_df_filtered
+  te <- test_df_filtered
+  tr[[target]] <- log1p(tr[[target]])
+  te[[target]] <- log1p(te[[target]])
+  
+  predictors <- setdiff(macros, target)
+  
+  set.seed(321)
+  fold <- createFolds(tr[[target]], k = k_folds, returnTrain = TRUE)
+  ctr1 <- trainControl(method = 'cv', index = fold)
+  
+  ENglmnetCTRL <- train(reformulate(predictors, response = target), data = tr,
                         method = 'glmnet', preProcess = c('YeoJohnson','zv'),
-                        trControl = ctr1)
+                        trControl = ctr1, tuneGrid = enetGrid)
   Enet_models[[target]] <- ENglmnetCTRL
   
   ### Error metrics
@@ -320,12 +368,10 @@ for (target in targets){
 performance_table_KNN <- do.call(rbind, performance_KNN)
 round(performance_table_KNN,3)
 
-### Support vector machines linear
+### Support vector machines radial
 
-svmGrid <- expand.grid(C = 2^seq(-5, 5, by = 1))
-
-SVMl_models <- list()
-performance_SVMl <- list()
+SVMr_models <- list()
+performance_SVMr <- list()
 
 for (target in targets){
   
@@ -340,17 +386,17 @@ for (target in targets){
   fold <- createFolds(tr[[target]], k = k_folds, returnTrain = TRUE)
   ctr1 <- trainControl(method = 'cv', index = fold)
   
-  SVMLinear <- train(reformulate(predictors, response = target), data = tr,
-                     method = 'svmLinear', tuneLength = 10,
+  SVMRadial <- train(reformulate(predictors, response = target), data = tr,
+                     method = 'svmRadial', tuneLength = 8,
                      preProcess = c('YeoJohnson','zv', 'center', 'scale'),
-                     trControl = ctr1, grid = svmGrid)
+                     trControl = ctr1)
   
-  SVMl_models[[target]] <- SVMLinear  
-  tr_perf <- getTrainPerf(SVMLinear)[, c('TrainRMSE', 'TrainRsquared', 'TrainMAE')]
+  SVMr_models[[target]] <- SVMRadial
+  tr_perf <- getTrainPerf(SVMRadial)[, c('TrainRMSE', 'TrainRsquared', 'TrainMAE')]
   
   # Log predict
   
-  pred_log <- predict(SVMLinear, te)
+  pred_log <- predict(SVMRadial, te)
   te_perf <- defaultSummary(data.frame(obs = te[[target]], pred = pred_log))
   names(te_perf) <- paste0('Test', names(te_perf))
   
@@ -359,11 +405,11 @@ for (target in targets){
   te_orig <- defaultSummary(data.frame(obs = expm1(te[[target]]), pred = expm1(pred_log)))
   names(te_orig) <- paste0('TestOrig', names(te_orig))
   
-  performance_SVMl[[target]] <- cbind(tr_perf, t(te_perf), t(te_orig), C = SVMLinear$bestTune$C)
+  performance_SVMr[[target]] <- cbind(tr_perf, t(te_perf), t(te_orig), C = SVMRadial$bestTune$C, sigma = SVMRadial$bestTune$sigma)
 }
 
-performance_table_SVMl <- do.call(rbind, performance_SVMl)
-round(performance_table_SVMl,3)
+performance_table_SVMr <- do.call(rbind, performance_SVMr)
+round(performance_table_SVMr,3)
 
 ### Random Forest
 
@@ -388,7 +434,7 @@ for (target in targets){
   
   
   RF <- train(reformulate(predictors, response = target), data = tr,
-                     method = 'rf', ntree = 50,
+                     method = 'rf', ntree = 50, #increase ntree???
                      preProcess = c('zv'),
                      trControl = ctr1, tuneGrid = tunegrid)
   
