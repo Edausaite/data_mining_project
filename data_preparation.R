@@ -17,6 +17,7 @@ for (name in file_names) {
 }
 
 food <- bind_rows(all_files)
+food$id <- seq_len(nrow(food))   # unique food ID
 food$`Nutrition Density` <- NULL   # not used
 cat("Number of foods:", nrow(food), "\n")  
 
@@ -50,7 +51,7 @@ ggsave("output/fig1_portion_check.png", width = 8, height = 5, dpi = 300)
 step1 <- filter(food, portion_g >= 5)
 
 # Convert: value / reference weight * 100
-nutrient_columns <- setdiff(names(food)[sapply(food, is.numeric)], "portion_g")
+nutrient_columns <- setdiff(names(food)[sapply(food, is.numeric)], c("portion_g", "id"))
 for (col in nutrient_columns) {
   step1[[col]] <- step1[[col]] / step1$portion_g * 100
 }
