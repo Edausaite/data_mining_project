@@ -1,12 +1,12 @@
 packages <- c('caret', 'rpart', 'corrplot', 'rpart.plot', 'car',
               'VGAM', 'dplyr', 'caTools', 'class', 'ggplot2',
-              'kernlab', 'glmnet', 'tidyr')
+              'kernlab', 'glmnet', 'tidyr', 'reticulate', 'proxy')
 
 invisible(lapply(packages, library, character.only = TRUE))
 
 dir.create("output", showWarnings = FALSE)
 
-### setwd('C:/Users/vomba/Desktop/Studijos/Data Mining/Group Project/Nutrient Project/Git')
+setwd('C:/Users/vomba/Desktop/Studijos/Data Mining/Group Project/Nutrient Project/Git')
 
 # 1. Read the five files into one table ---------------------------------
 file_names <- paste0("FOOD-DATA-GROUP", 1:5, ".csv")
@@ -274,3 +274,159 @@ for (target in targets){
 
 performance_table_enet <- do.call(rbind, performance_enet)
 round(performance_table_enet,3)
+
+### KNN
+
+knnGrid <- data.frame(k = seq(3, 31, by = 2))
+
+KNN_models <- list()
+performance_KNN <- list()
+
+for (target in targets){
+  
+  tr <- train_df_filtered
+  te <- test_df_filtered
+  tr[[target]] <- log1p(tr[[target]])
+  te[[target]] <- log1p(te[[target]])
+  
+  predictors <- setdiff(macros, target)
+  
+  set.seed(321)
+  fold <- createFolds(tr[[target]], k = k_folds, returnTrain = TRUE)
+  ctr1 <- trainControl(method = 'cv', index = fold)
+  
+  knnTune <- train(reformulate(predictors, response = target), data = tr,
+                   method = 'knn', tuneGrid = knnGrid,
+                   preProcess = c('YeoJohnson', 'zv', 'center', 'scale'),
+                   trControl = ctr1)
+ 
+  KNN_models[[target]] <- knnTune  
+  tr_perf <- getTrainPerf(knnTune)[, c('TrainRMSE', 'TrainRsquared', 'TrainMAE')]
+  
+  # Predict log scale
+  
+  pred_log <- predict(knnTune, te)
+  te_perf <- defaultSummary(data.frame(obs = te[[target]], pred = pred_log))
+  names(te_perf) <- paste0('Test', names(te_perf))
+  
+  # Predict orignal scale
+  
+  te_orig <- defaultSummary(data.frame(obs = expm1(te[[target]]), pred = expm1(pred_log)))
+  names(te_orig) <- paste0('TestOrig', names(te_orig))
+  
+  performance_KNN[[target]] <- cbind(tr_perf, t(te_perf), t(te_orig),K = knnTune$bestTune$k)
+  }
+performance_table_KNN <- do.call(rbind, performance_KNN)
+round(performance_table_KNN,3)
+
+### Support vector machines linear
+
+svmGrid <- expand.grid(C = 2^seq(-5, 5, by = 1))
+
+SVMl_models <- list()
+performance_SVMl <- list()
+
+for (target in targets){
+  
+  tr <- train_df_filtered
+  te <- test_df_filtered
+  tr[[target]] <- log1p(tr[[target]])
+  te[[target]] <- log1p(te[[target]])
+  
+  predictors <- setdiff(macros, target)
+  
+  set.seed(321)
+  fold <- createFolds(tr[[target]], k = k_folds, returnTrain = TRUE)
+  ctr1 <- trainControl(method = 'cv', index = fold)
+  
+  SVMLinear <- train(reformulate(predictors, response = target), data = tr,
+                     method = 'svmLinear', tuneLength = 10,
+                     preProcess = c('YeoJohnson','zv', 'center', 'scale'),
+                     trControl = ctr1, grid = svmGrid)
+  
+  SVMl_models[[target]] <- SVMLinear  
+  tr_perf <- getTrainPerf(SVMLinear)[, c('TrainRMSE', 'TrainRsquared', 'TrainMAE')]
+  
+  # Log predict
+  
+  pred_log <- predict(SVMLinear, te)
+  te_perf <- defaultSummary(data.frame(obs = te[[target]], pred = pred_log))
+  names(te_perf) <- paste0('Test', names(te_perf))
+  
+  # Original scale
+  
+  te_orig <- defaultSummary(data.frame(obs = expm1(te[[target]]), pred = expm1(pred_log)))
+  names(te_orig) <- paste0('TestOrig', names(te_orig))
+  
+  performance_SVMl[[target]] <- cbind(tr_perf, t(te_perf), t(te_orig), C = SVMLinear$bestTune$C)
+}
+
+performance_table_SVMl <- do.call(rbind, performance_SVMl)
+round(performance_table_SVMl,3)
+
+### Random Forest
+
+RF_models <- list()
+performance_RF <- list()
+
+for (target in targets){
+  
+  tr <- train_df_filtered
+  te <- test_df_filtered
+  tr[[target]] <- log1p(tr[[target]])
+  te[[target]] <- log1p(te[[target]])
+  
+  predictors <- setdiff(macros, target)
+  
+  set.seed(321)
+  fold <- createFolds(tr[[target]], k = k_folds, returnTrain = TRUE)
+  ctr1 <- trainControl(method = 'cv', index = fold)
+  
+  p <- length(predictors)
+  tunegrid <- expand.grid(mtry = sort(unique(c(2, floor(p / 2), p))))
+  
+  
+  RF <- train(reformulate(predictors, response = target), data = tr,
+                     method = 'rf', ntree = 50,
+                     preProcess = c('zv'),
+                     trControl = ctr1, tuneGrid = tunegrid)
+  
+  RF_models[[target]] <- RF  
+  tr_perf <- getTrainPerf(RF)[, c('TrainRMSE', 'TrainRsquared', 'TrainMAE')] 
+  
+  # Log predict
+  
+  pred_log <- predict(RF, te)
+  te_perf <- defaultSummary(data.frame(obs = te[[target]], pred = pred_log))
+  names(te_perf) <- paste0('Test', names(te_perf))
+  
+  # Original scale
+  
+  te_orig <- defaultSummary(data.frame(obs = expm1(te[[target]]), pred = expm1(pred_log)))
+  names(te_orig) <- paste0('TestOrig', names(te_orig))
+  
+  performance_RF[[target]] <- cbind(tr_perf, t(te_perf), t(te_orig), mtry = RF$bestTune$mtry)
+    }
+
+performance_table_RF <- do.call(rbind, performance_RF)
+round(performance_table_RF,3)
+
+### Category addition
+
+
+py_install("sentence-transformers", pip = TRUE)
+
+st <- import("sentence_transformers")
+model <- st$SentenceTransformer('all-mpnet-base-v2')
+
+embeddings <- model$encode(df$food)
+
+dist_matrix <- proxy::dist(embeddings, method = "cosine")
+
+hc <- hclust(dist_matrix, method = "average")
+
+cluster_labels <- cutree(hc, h = 0.70)
+
+df$group <- cluster_labels
+
+df$group <- as.factor(df$group)
