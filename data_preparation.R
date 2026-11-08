@@ -6,7 +6,7 @@ invisible(lapply(packages, library, character.only = TRUE))
 
 dir.create("output", showWarnings = FALSE)
 
-setwd('C:/Users/vomba/Desktop/Studijos/Data Mining/Group Project/Nutrient Project/Git')
+#setwd('C:/Users/vomba/Desktop/Studijos/Data Mining/Group Project/Nutrient Project/Git')
 
 # 1. Read the five files into one table ---------------------------------
 file_names <- paste0("FOOD-DATA-GROUP", 1:5, ".csv")
@@ -21,7 +21,8 @@ for (name in file_names) {
 }
 
 food <- bind_rows(all_files)
-food$`Nutrition Density` <- NULL   # not usedddd
+food$id <- seq_len(nrow(food))   # adding unique food ID
+food$`Nutrition Density` <- NULL   # not used
 cat("Number of foods:", nrow(food), "\n")  
 
 macros <- c("Fat", "Saturated Fats", "Monounsaturated Fats",
@@ -54,7 +55,7 @@ ggsave("output/fig1_portion_check.png", width = 8, height = 5, dpi = 300)
 step1 <- filter(food, portion_g >= 5)
 
 # Convert: value / reference weight * 100
-nutrient_columns <- setdiff(names(food)[sapply(food, is.numeric)], "portion_g")
+nutrient_columns <- setdiff(names(food)[sapply(food, is.numeric)], c("portion_g", "id"))
 for (col in nutrient_columns) {
   step1[[col]] <- step1[[col]] / step1$portion_g * 100
 }
