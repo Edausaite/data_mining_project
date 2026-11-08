@@ -237,6 +237,51 @@ for (target in targets){
 performance_table_lasso <- do.call(rbind, performance_lasso)
 round(performance_table_lasso,3)
 
+### Ridge
+
+ridgeGrid <- data.frame(lambda = seq(0, 0.1, length = 10))
+
+ridge_models <- list()
+performance_ridge <- list()
+
+for (target in targets){
+  
+  tr <- train_df_filtered
+  te <- test_df_filtered
+  tr[[target]] <- log1p(tr[[target]])
+  te[[target]] <- log1p(te[[target]])
+  
+  predictors <- setdiff(macros, target)
+  
+  set.seed(321)
+  fold <- createFolds(tr[[target]], k = k_folds, returnTrain = TRUE)
+  ctr1 <- trainControl(method = 'cv', index = fold)
+  
+  RidgeCTRL <- train(reformulate(predictors, response = target), data = tr,
+                       method = 'ridge', preProcess = c('YeoJohnson','zv'),
+                       trControl = ctr1, tuneGrid = ridgeGrid)
+  
+  ridge_models[[target]] <- RidgeCTRL
+  
+  ### Error metrics
+  tr_perf <- getTrainPerf(RidgeCTRL)[, c('TrainRMSE', 'TrainRsquared', 'TrainMAE')]
+  
+  ### Log scale
+  pred_log <- predict(RidgeCTRL, te)
+  te_perf <- defaultSummary(data.frame(obs = te[[target]], pred = pred_log))
+  names(te_perf) <- paste0('Test', names(te_perf))
+  
+  ### Back to original scale
+  te_orig <- defaultSummary(data.frame(obs = expm1(te[[target]]), pred = expm1(pred_log)))
+  names(te_orig) <- paste0('TestOrig', names(te_orig))
+  
+  performance_ridge[[target]] <- cbind(tr_perf, t(te_perf), t(te_orig),
+                                       lambda = RidgeCTRL$bestTune$lambda)
+  }
+
+performance_table_ridge <- do.call(rbind, performance_ridge)
+round(performance_table_ridge, 3)
+
 ### Elastic Net
 
 Enet_models <- list()
