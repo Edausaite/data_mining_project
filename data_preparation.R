@@ -460,6 +460,7 @@ round(performance_table_RF,3)
 
 ### Category addition
 
+#approach (sentence-transformer embeddings + hierarchical clustering)
 
 py_install("sentence-transformers", pip = TRUE)
 
@@ -477,3 +478,57 @@ cluster_labels <- cutree(hc, h = 0.70)
 df$group <- cluster_labels
 
 df$group <- as.factor(df$group)
+
+# Food categories from keywords in the food name --------------------------
+# Rules are checked from top to bottom; the first match wins.
+df$category <- case_when(
+  # 1. Fast food chains
+  grepl("mcdonalds|burger king|taco bell|wendys|kfc|subway|pizza hut|dominos|starbucks|dunkin|arbys|dairy queen", df$food) ~ "Fast food",
+  
+  # 2. Specific cases that would otherwise match a wrong rule
+  grepl("applesauce|apple sauce", df$food) ~ "Fruit",
+  grepl("butternut", df$food) ~ "Vegetables",
+  grepl("goose fat|tallow|shortening|\\blard\\b", df$food) ~ "Fats and oils",
+  grepl("arroz con leche|dulce de leche|honey|ladyfinger|sucker|licorice|doughnut|donut", df$food) ~ "Sweets and desserts",
+  grepl("peanut butter|almond butter|nut butter|hummus|tahini|tempeh|meatless|vegetarian|meat extender|hanfprotein|lupin|pecan|trail mix|studentenfutter", df$food) ~ "Legumes, nuts and seeds",
+  grepl("ice cream|chocolate", df$food) ~ "Sweets and desserts",
+  grepl("coconut milk|almond milk|soy milk|oat milk|rice milk", df$food) ~ "Beverages",
+  grepl("sesame butter|cashew butter|sunflower butter|acorn", df$food) ~ "Legumes, nuts and seeds",
+  grepl("water chestnut|pickled cucumber|pickles", df$food) ~ "Vegetables",
+  grepl("dressing", df$food) ~ "Fats and oils",
+  grepl("\\btea\\b|juice|lemonade|limeade|coconut water", df$food) ~ "Beverages",
+  grepl("pancake|hotcake|bagel", df$food) ~ "Cereals and grains",
+  grepl("gravy|sauce", df$food) ~ "Sauces and condiments",
+  
+  # 3. Soups and mixed dishes
+  grepl("soup|broth|consomme|stew|chowder|bisque|gazpacho", df$food) ~ "Soups and stews",
+  grepl("lasagna|ravioli|spaghetti|pizza|taco|burrito|tamale|pupusa|tostada|nachos|enchilada|quesadilla|casserole|sandwich|burger|salad|succotash|loaf|arroz|wonton", df$food) ~ "Mixed dishes",
+  grepl("hotdog|hot dog|frankfurter|pepperoni", df$food) ~ "Meat",
+  
+  # 4. Sweets (before dairy and cereals: cheesecake, cinnamon rolls)
+  grepl("candy|cookie|cake|\\bpie\\b|sugar|syrup|\\bjam\\b|dessert|pastry|marshmallow|fudge|halavah|praline|mints|gum drop|skittles|caramel|jell|fruit leather|clif bar|granola bar|frosting|fondant|sweetener|splenda|saccharin|aspartame|pudding|brownie|eclair|cinnamon roll|wafer|molasses|grenadine|pectin|tapioca", df$food) ~ "Sweets and desserts",
+  
+  # 5. Animal products
+  grepl("cheese|milk|yogurt|cream|\\bbutter\\b|kefir", df$food) ~ "Dairy",
+  grepl("beef|pork|chicken|turkey|lamb|veal|\\bham\\b|bacon|sausage|salami|duck|liver|steak|mutton|chuck|mortadella|bologna|wurst|ostrich|\\bemu\\b|bison|caribou|venison|\\belk\\b|moose|buffalo|rabbit|goose|quail|pheasant|squab|turtle|spleen|tongue|tripe", df$food) ~ "Meat",
+  grepl("fish|salmon|tuna|\\bcod\\b|trout|sardine|shrimp|crab|lobster|oyster|clam|mussel|pike|haddock|burbot|pollock|smelt|walleye|carp|snapper|\\broe\\b|anchovy|herring|tilapia|whiting|shad|shark|mullet|cisco|pompano|perch|flounder|mackerel|croaker|scup|sheepshead|bass|halibut|turbot|surimi|sturgeon|\\bspot\\b|\\bdrum\\b|\\bpout\\b|catfish|\\bsole\\b|\\beel\\b|squid|octopus|scallop|caviar|cusk|yellowtail|\\bling\\b|grouper|abalone|whelk|conch", df$food) ~ "Fish and seafood",
+  grepl("^eggs?\\b|scrambled egg|egg yolk|egg white|omelet", df$food) ~ "Eggs",
+  
+  # 6. Sauces and herbs (before legumes and vegetables: soy sauce, nutmeg)
+  grepl("sauce|gravy|vinegar|catsup|ketchup|salsa|relish|sofrito|adobo|au jus|mustard", df$food) ~ "Sauces and condiments",
+  grepl("thyme|\\bmace\\b|curry|coriander|wasabi|spice|cinnamon|oregano|basil|paprika|nutmeg|clove|cumin|sage|rosemary|\\bdill\\b|parsley|turmeric|saffron|tarragon|marjoram", df$food) ~ "Herbs and spices",
+  
+  # 7. Plant foods
+  grepl("bean|lentil|\\bpeas?\\b|chickpea|tofu|soy|nut|almond|walnut|cashew|seed|sesame", df$food) ~ "Legumes, nuts and seeds",
+  grepl("bread|rice|pasta|cereal|\\boats?\\b|oatmeal|wheat|flour|cracker|noodle|bagel|muffin|amaranth|triticale|barley|bulgur|quinoa|millet|buckwheat|couscous|teff|kamut|spelt|sorghum|\\brye\\b|semolina|bran\\b|kelloggs|granola|macaroni|waffle|tortilla|crouton|\\broll|focaccia|arepa|biscuit|pretzel|keikitos|toast|popover", df$food) ~ "Cereals and grains",
+  grepl("apple|banana|orange|berr|grape|pear|peach|plum|cherr|mango|melon|juice|kiwi|rowan|tangerine|prune|\\bfigs?\\b|currant|plantain|rose hip|lemon|\\blimes?\\b|abiyuch|persimmon|carambola|starfruit|feijoa|jeijoa|rambutan|apricot|papaya|pineapple|guava|nectarine|grapefruit|lychee|\\bdates?\\b|raisin|sapote|loquat|naranjilla|lulo|sapodilla|pummelo|soursop", df$food) ~ "Fruit",
+  grepl("potato|tomato|carrot|onion|lettuce|spinach|broccoli|cabbage|pepper|corn|squash|cattail|chayote|gourd|borage|dandelion|cress|fireweed|greens|kale|celery|cucumber|zucchini|eggplant|asparagus|mushroom|radish|beet|turnip|okra|artichoke|leek|garlic|cauliflower|sprout|fries|jute|romanesco|nopales|rutabaga|pickle|tomatillo|taro|purslane|drumstick leaves|pumpkin|salsify|burdock|sesbania|\\byam\\b|arrowhead|vegetable chips|seaweed", df$food) ~ "Vegetables",
+  
+  # 8. Fats and beverages
+  grepl("\\boils?\\b|margarine|dressing|mayonnaise|ghee", df$food) ~ "Fats and oils",
+  grepl("soda|coffee|\\btea\\b|beer|bier|wine|drink|\\bwater\\b|whiskey|tequila|daiquiri|vodka|\\brum\\b|\\bgin\\b|liqueur|cocktail|cola|sprite|ginger ale|espresso|cappuccino|cocoa|gatorade|powerade|energy|throttle|beverage|nectar|horchata|punch|glucerna", df$food) ~ "Beverages",
+  
+  TRUE ~ "Other"
+)
+df$category <- as.factor(df$category)
+table(df$category)
