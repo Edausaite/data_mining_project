@@ -155,7 +155,7 @@ macros <- make.names(macros)
 k_folds <- 8
 
 
-### Linear Model
+### Linear model
 
 lm_models <- list()
 performance <- list()
@@ -321,12 +321,10 @@ for (target in targets){
 performance_table_KNN <- do.call(rbind, performance_KNN)
 round(performance_table_KNN,3)
 
-### Support vector machines linear
+### Support vector machines radial
 
-svmGrid <- expand.grid(C = 2^seq(-5, 5, by = 1))
-
-SVMl_models <- list()
-performance_SVMl <- list()
+SVMr_models <- list()
+performance_SVMr <- list()
 
 for (target in targets){
   
@@ -341,17 +339,17 @@ for (target in targets){
   fold <- createFolds(tr[[target]], k = k_folds, returnTrain = TRUE)
   ctr1 <- trainControl(method = 'cv', index = fold)
   
-  SVMLinear <- train(reformulate(predictors, response = target), data = tr,
-                     method = 'svmLinear', tuneLength = 10,
+  SVMRadial <- train(reformulate(predictors, response = target), data = tr,
+                     method = 'svmRadial', tuneLength = 8,
                      preProcess = c('YeoJohnson','zv', 'center', 'scale'),
-                     trControl = ctr1, grid = svmGrid)
+                     trControl = ctr1)
   
-  SVMl_models[[target]] <- SVMLinear  
-  tr_perf <- getTrainPerf(SVMLinear)[, c('TrainRMSE', 'TrainRsquared', 'TrainMAE')]
+  SVMr_models[[target]] <- SVMRadial
+  tr_perf <- getTrainPerf(SVMRadial)[, c('TrainRMSE', 'TrainRsquared', 'TrainMAE')]
   
   # Log predict
   
-  pred_log <- predict(SVMLinear, te)
+  pred_log <- predict(SVMRadial, te)
   te_perf <- defaultSummary(data.frame(obs = te[[target]], pred = pred_log))
   names(te_perf) <- paste0('Test', names(te_perf))
   
@@ -360,11 +358,11 @@ for (target in targets){
   te_orig <- defaultSummary(data.frame(obs = expm1(te[[target]]), pred = expm1(pred_log)))
   names(te_orig) <- paste0('TestOrig', names(te_orig))
   
-  performance_SVMl[[target]] <- cbind(tr_perf, t(te_perf), t(te_orig), C = SVMLinear$bestTune$C)
+  performance_SVMr[[target]] <- cbind(tr_perf, t(te_perf), t(te_orig), C = SVMRadial$bestTune$C, sigma = SVMRadial$bestTune$sigma)
 }
 
-performance_table_SVMl <- do.call(rbind, performance_SVMl)
-round(performance_table_SVMl,3)
+performance_table_SVMr <- do.call(rbind, performance_SVMr)
+round(performance_table_SVMr,3)
 
 ### Random Forest
 
