@@ -21,7 +21,7 @@ for (name in file_names) {
 }
 
 food <- bind_rows(all_files)
-food$`Nutrition Density` <- NULL   # not usedd
+food$`Nutrition Density` <- NULL   # not usedddd
 cat("Number of foods:", nrow(food), "\n")  
 
 macros <- c("Fat", "Saturated Fats", "Monounsaturated Fats",
