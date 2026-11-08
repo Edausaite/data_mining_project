@@ -66,18 +66,21 @@ step2 <- step1[apply(step1[macros], 1, max) <= 100, ]
 # Remove impossible foods: more sugar than carbohydrates (+0.1 for rounding)
 step3 <- filter(step2, Sugars <= Carbohydrates + 0.1)
 
-food100 <- step3
+# Remove foods with mineral values shifted by one column
+# (calcium -> copper, magnesium -> manganese, phosphorus -> potassium, potassium -> selenium)
+step4 <- filter(step3, !(Copper > 5 & Calcium < 1))
+
+food100 <- step4
 
 cleaning <- data.frame(
   step = c("Original dataset", "Reference weight below 5 g",
-           "Nutrient above 100 g per 100 g", "Sugars exceed total carbohydrates"),
+           "Nutrient above 100 g per 100 g", "Sugars exceed total carbohydrates","Mineral values shifted by one column"),
   removed = c(NA, nrow(food) - nrow(step1), nrow(step1) - nrow(step2),
-              nrow(step2) - nrow(step3)),
-  remaining = c(nrow(food), nrow(step1), nrow(step2), nrow(step3))
+              nrow(step2) - nrow(step3), nrow(step3) - nrow(step4)),
+  remaining = c(nrow(food), nrow(step1), nrow(step2), nrow(step3), nrow(step4))
 )
 print(cleaning)
 write.csv(cleaning, "output/table1_cleaning_steps.csv", row.names = FALSE)
-
 
 # 4. Share of zeros (targets need < 25% zeros) ---------------------------
 vitamins <- grep("^Vitamin", names(food100), value = TRUE)
@@ -126,11 +129,9 @@ ggsave("output/fig3_correlations.png", width = 10, height = 6, dpi = 300)
 write.csv(food100, "output/food_per100g_clean.csv", row.names = FALSE)
 cat("Done:", nrow(food100), "foods saved\n")   # 2198
 
-
-
 ##########
 
-df <- step3
+df <- step4
 
 ### Target
 
