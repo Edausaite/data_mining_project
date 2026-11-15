@@ -82,6 +82,70 @@ cleaning <- data.frame(
 print(cleaning)
 write.csv(cleaning, "output/table1_cleaning_steps.csv", row.names = FALSE)
 
+# 3b. Validation sample for the 100 g conversion --------------------------
+set.seed(2025)   
+
+check_cols <- c("Water", "Fat", "Carbohydrates", "Protein",
+                "Calcium", "Iron", "Magnesium", "Potassium")
+
+validation_sample <- food100 |>
+  slice_sample(n = 10) |>
+  select(id, food, portion_g, all_of(check_cols)) |>
+  mutate(across(c(portion_g, all_of(check_cols)), \(x) round(x, 2)))
+
+names(validation_sample)[names(validation_sample) %in% check_cols] <-
+  paste0(check_cols, "_conv")
+
+
+# portion weight shown on website
+validation_sample$portion_site_g <- NA         
+for (col in check_cols) validation_sample[[paste0(col, "_site")]] <- NA
+validation_sample$url <- NA
+
+write.csv(validation_sample, "output/validation_sample_template.csv", row.names = FALSE)
+
+# 3c. Compare converted values with website values ------------------------
+v <- read.csv("data/validation_sample.csv", strip.white = TRUE) |>
+  filter(!is.na(id))
+
+res <- v |>
+  select(food, ends_with("_conv"), ends_with("_site")) |>
+  pivot_longer(-food, names_to = c("nutrient", ".value"),
+               names_pattern = "(.*)_(conv|site)") |>
+  mutate(pct_diff = ifelse(site > 0, (conv - site) / site * 100, NA),
+         abs_pct  = abs(pct_diff))
+
+# Differences per food (median absolute % difference)
+per_food <- res |>
+  group_by(food) |>
+  summarise(median_abs_pct = round(median(abs_pct, na.rm = TRUE), 1),
+            n_compared     = sum(!is.na(abs_pct)))
+print(per_food)
+
+# Items excluded from the summary (see report):
+# beef diced asda   - erroneous values in original record (scraping error)
+# vegetable soup,
+# potato chips bbq  - no unambiguous match on source website
+# big n tasty       - discontinued, not available on source website
+excluded <- c("beef diced asda", "vegetable soup",
+              "potato chips barbecue", "big n tasty mcdonalds")
+
+matched <- filter(res, !food %in% excluded, !is.na(abs_pct))
+
+validation_summary <- data.frame(
+  items            = n_distinct(matched$food),
+  values_compared  = nrow(matched),
+  median_abs_pct   = round(median(matched$abs_pct), 1),
+  within_5pct      = round(mean(matched$abs_pct <= 5) * 100),
+  within_10pct     = round(mean(matched$abs_pct <= 10) * 100),
+  share_higher_pct = round(mean(matched$pct_diff > 0) * 100)
+)
+print(validation_summary)
+
+write.csv(per_food, "output/table_validation_per_food.csv", row.names = FALSE)
+write.csv(validation_summary, "output/table_validation_summary.csv", row.names = FALSE)
+
+
 # 4. Share of zeros (targets need < 25% zeros) ---------------------------
 vitamins <- grep("^Vitamin", names(food100), value = TRUE)
 share_zero <- sapply(food100[c(minerals, vitamins)], function(x) mean(x == 0))
