@@ -82,28 +82,6 @@ cleaning <- data.frame(
 print(cleaning)
 write.csv(cleaning, "output/table1_cleaning_steps.csv", row.names = FALSE)
 
-# 3b. Validation sample for the 100 g conversion --------------------------
-set.seed(2025)   
-
-check_cols <- c("Water", "Fat", "Carbohydrates", "Protein",
-                "Calcium", "Iron", "Magnesium", "Potassium")
-
-validation_sample <- food100 |>
-  slice_sample(n = 10) |>
-  select(id, food, portion_g, all_of(check_cols)) |>
-  mutate(across(c(portion_g, all_of(check_cols)), \(x) round(x, 2)))
-
-names(validation_sample)[names(validation_sample) %in% check_cols] <-
-  paste0(check_cols, "_conv")
-
-
-# portion weight shown on website
-validation_sample$portion_site_g <- NA         
-for (col in check_cols) validation_sample[[paste0(col, "_site")]] <- NA
-validation_sample$url <- NA
-
-write.csv(validation_sample, "output/validation_sample_template.csv", row.names = FALSE)
-
 # 4. Share of zeros (targets need < 25% zeros) ---------------------------
 vitamins <- grep("^Vitamin", names(food100), value = TRUE)
 share_zero <- sapply(food100[c(minerals, vitamins)], function(x) mean(x == 0))
